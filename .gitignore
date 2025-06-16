@@ -1,0 +1,9 @@
+server-piface/__pycache__
+server-piface/dataset
+server-piface/master_embeddings.pkl
+server-piface/perkuliahan.db
+PiFace/__pycache__
+PiFace/dataset
+PiFace/encodings.pkl
+server-piface/server
+PiFace/raspi

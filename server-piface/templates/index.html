@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content="5" />
+    <title>Dashboard Absensi Real-time</title>
+    <link rel="stylesheet" href="/project-besar/server-piface/static/css/style.css" />
+    <link rel="stylesheet" href="/project-besar/server-piface/static/img/background2.jpg" />
+
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Log Absensi Wajah</h1>
+        <table>
+            <thead>x
+                <tr>
+                    <th>Nama</th>
+                    <th>Waktu Absen</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>{{ log.nama }}</td>
+                    <td>{{ log.waktu_absen }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="2" style="text-align: center;">Belum ada data absensi hari ini.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

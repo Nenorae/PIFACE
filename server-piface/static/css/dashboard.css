@@ -1,0 +1,120 @@
+body {
+    font-family: sans-serif;
+    margin: 2em;
+    background-color: #f4f4f9;
+    color: #333;
+}
+
+h1 {
+    color: #ffffff;
+}
+h2 {
+    color:#000000
+}
+
+table {
+    width: 100%;
+    margin: 2em 0;
+    border-collapse: collapse;
+    box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+    background: #fff;
+}
+
+th, td {
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+th {
+    background-color: #007bff;
+    color: white;
+}
+
+button {
+    padding: 8px 12px;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+}
+
+button:disabled {
+    background-color: #ccc;
+}
+
+select {
+    padding: 8px;
+    margin-right: 10px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+}
+
+.btn-start {
+    background-color: #28a745;
+}
+
+.btn-stop {
+    background-color: #dc3545;
+}
+
+.container {
+    display: flex;
+    gap: 2em;
+}
+
+.main-content {
+    flex: 2;
+}
+
+.sidebar {
+    flex: 1;
+}
+
+.container.header-bar {
+    max-width: 1150px;
+    margin: 20px auto;
+    padding: 15px 20px;
+    background-color: #007bff;
+    color: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    border-radius: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.container.header-bar a {
+    text-decoration: none;
+    background-color: #0056b3;
+    color: white;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-weight: bold;
+    transition: background-color 0.2s ease;
+}
+
+.container.header-bar a:hover {
+    background-color: #ff0000;
+}
+
+
+.floating-logo {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    height: 50px;
+    width: auto;
+    z-index: 1000; 
+}
+
+
+.sesi-aktif {
+    color: green;
+    font-weight: bold;
+}
+
+.sesi-nonaktif {
+    color: red;
+    font-weight: bold;
+}

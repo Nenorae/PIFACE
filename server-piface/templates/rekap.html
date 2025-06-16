@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <title>Rekap Absensi Mahasiswa</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/rekap.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css') }}">
+</head>
+
+<body>
+    <img src="{{ url_for('static', filename='img/logoPens2.jpg') }}" alt="Logo" class="floating-logo">
+<div class="header-container">
+    <div class="header-bar">
+        {% if mahasiswa_terpilih %}
+            <h1>Rekap Absensi untuk: {{ mahasiswa_terpilih.nama_mahasiswa }}</h1>
+        {% endif %}
+        <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+</div>
+
+    <form method="GET" action="{{ url_for('rekap') }}">
+        <label for="mhs_id">Pilih Mahasiswa:</label>
+        <select name="mhs_id" id="mhs_id" onchange="this.form.submit()">
+            <option value="">-- Pilih Mahasiswa --</option>
+            {% for mhs in mahasiswa_list %}
+                <option value="{{ mhs.id }}" {% if mahasiswa_terpilih and mhs.id == mahasiswa_terpilih.id %}selected{% endif %}>
+                    {{ mhs.nama_mahasiswa }}
+                </option>
+            {% endfor %}
+        </select>
+    </form>
+
+    {% if mahasiswa_terpilih %}
+        <h2>Rekap untuk: {{ mahasiswa_terpilih.nama_mahasiswa }}</h2>
+        {% if rekap_data %}
+            <table>
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">Mata Kuliah</th>
+                        {% for i in range(1, 17) %}<th>P{{ i }}</th>{% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mk, pertemuan_list in rekap_data.items() %}
+                    <tr>
+                        <td style="text-align: left;">{{ mk }}</td>
+                        {% for status in pertemuan_list %}
+                            {% if status == 'Hadir' %}
+                                <td class="hadir">✓</td>
+                            {% elif status == 'Tidak Hadir' %}
+                                <td class="absen">✗</td>
+                            {% else %}
+                                <td class="kosong">-</td>
+                            {% endif %}
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>Mahasiswa ini belum terdaftar di mata kuliah manapun.</p>
+        {% endif %}
+    {% endif %}
+</body>
+</html>

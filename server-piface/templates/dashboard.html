@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard Dosen</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/global.css') }}">
+
+</head>
+<body>
+<img src="{{ url_for('static', filename='img/logoPens2.jpg') }}" alt="Logo" class="floating-logo">
+    <div class="container header-bar">
+      <h1>Dashboard Dosen: {{ nama_dosen }}</h1>
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+
+    <div class="container">
+        <div class="main-content">
+            <h2>Jadwal Anda</h2>
+            <div id="status-sesi">
+                {% if sesi_aktif %}
+                    <p class="sesi-aktif" data-sesi-aktif="true">SESI AKTIF (ID: {{ sesi_aktif.sesi_db_id }})</p>
+                    <button class="btn-stop" onclick="selesaiSesi()">Selesai Sesi</button>
+                {% else %}
+                    <p class="sesi-nonaktif" data-sesi-aktif="false">TIDAK ADA SESI AKTIF</p>
+                {% endif %}
+            </div>
+
+            <table>
+                <thead>
+                    <tr><th>Mata Kuliah</th><th>Hari/Jam</th><th>Aksi</th></tr>
+                </thead>
+                <tbody>
+                    {% for jadwal in jadwal_list %}
+                    <tr>
+                        <td>{{ jadwal.matakuliah.nama_mk }}</td>
+                        <td>{{ jadwal.hari }}, {{ jadwal.jam_mulai }}</td>
+                        <td>
+                            <div>
+                                <select id="pertemuan-{{ jadwal.id }}">
+                                    {% for i in range(1, 17) %}
+                                        <option value="{{ i }}">Pertemuan {{ i }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="btn-start" onclick="mulaiSesi({{ jadwal.id }})" {% if sesi_aktif %}disabled{% endif %}>
+                                    Mulai Sesi
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="sidebar">
+            <h2>Log Absensi Terkini</h2>
+            <table id="log-absensi-table">
+                <thead><tr><th>Nama Mahasiswa</th><th>Waktu Absen</th></tr></thead>
+                <tbody id="log-absensi-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const sesiAktif = document.querySelector('[data-sesi-aktif]')?.getAttribute('data-sesi-aktif') === 'true';
+
+        async function mulaiSesi(jadwalId) {
+            const pertemuanKe = document.getElementById(`pertemuan-${jadwalId}`).value;
+            const response = await fetch("/api/mulai_sesi", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ jadwal_id: jadwalId, pertemuan_ke: pertemuanKe }),
+            });
+            const result = await response.json();
+            alert(result.message);
+            if (response.ok) window.location.reload();
+        }
+
+        async function selesaiSesi() {
+            const response = await fetch("/api/selesai_sesi", { method: "POST" });
+            if (response.ok) window.location.reload();
+            else alert('Gagal menyelesaikan sesi.');
+        }
+
+        async function perbaruiLog() {
+            if (!sesiAktif) {
+                document.getElementById("log-absensi-body").innerHTML =
+                    '<tr><td colspan="2" style="text-align:center;">Sesi belum dimulai.</td></tr>';
+                return;
+            }
+
+            try {
+                const response = await fetch("/api/log_absen_terkini");
+                const logs = await response.json();
+                const tableBody = document.getElementById("log-absensi-body");
+                tableBody.innerHTML = "";
+
+                if (logs.length > 0) {
+                    logs.forEach(log => {
+                        tableBody.innerHTML += `<tr><td>${log.nama_mahasiswa}</td><td>${log.waktu_absen}</td></tr>`;
+                    });
+                } else {
+                    tableBody.innerHTML = '<tr><td colspan="2" style="text-align:center;">Menunggu absensi...</td></tr>';
+                }
+            } catch (error) {
+                console.error("Gagal mengambil data log:", error);
+            }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            perbaruiLog();
+            if (sesiAktif) setInterval(perbaruiLog, 3000);
+        });
+    </script>
+</body>
+</html>
