@@ -7,17 +7,15 @@ class Dosen(db.Model):
     __tablename__ = 'dosen'
     id = db.Column(db.Integer, primary_key=True)
     nama_dosen = db.Column(db.String(100), unique=True, nullable=False)
-    # === PASTIKAN BARIS INI ADA DAN TERSIMPAN ===
+    # Ensure this line exists and is saved
     password_hash = db.Column(db.String(256), nullable=False)
-    # ============================================
 
 class Mahasiswa(db.Model):
     __tablename__ = 'mahasiswa'
     id = db.Column(db.Integer, primary_key=True)
     nama_mahasiswa = db.Column(db.String(100), unique=True, nullable=False)
-    # === TAMBAHKAN BARIS INI ===
+    # Add this line
     password_hash = db.Column(db.String(256), nullable=False)
-    # ===========================
 
 class Matakuliah(db.Model):
     __tablename__ = 'matakuliah'
@@ -41,7 +39,7 @@ class SesiPerkuliahan(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     jadwal_id = db.Column(db.Integer, db.ForeignKey('jadwal.id'), nullable=False)
     dosen_pengajar_id = db.Column(db.Integer, db.ForeignKey('dosen.id'), nullable=False)
-    pertemuan_ke = db.Column(db.Integer, nullable=True)  # Dibuat nullable untuk fleksibilitas
+    pertemuan_ke = db.Column(db.Integer, nullable=True)  # Made nullable for flexibility
     waktu_mulai = db.Column(db.DateTime, default=datetime.utcnow)
     waktu_selesai = db.Column(db.DateTime, nullable=True)
 
@@ -51,3 +49,4 @@ class LogAbsensi(db.Model):
     sesi_id = db.Column(db.Integer, db.ForeignKey('sesi_perkuliahan.id'), nullable=False)
     mahasiswa_id = db.Column(db.Integer, db.ForeignKey('mahasiswa.id'), nullable=False)
     waktu_absen = db.Column(db.DateTime, default=datetime.utcnow)
+

@@ -1,22 +1,22 @@
 import os
 from data_manager import add_new_person, delete_person, list_datasets
 from encoder import regenerate_encodings
-from recognition import run_continuous_recognition # <--- PERUBAHAN DI SINI
+from recognition import run_continuous_recognition
 
 def display_menu():
-    """Menampilkan menu utama ke pengguna."""
-    print("\n===== MENU SISTEM PENGENALAN WAJAH =====")
-    print("1. Jalankan Pengenalan Wajah")
-    print("2. Tambah Data Wajah Baru")
-    print("3. Hapus Data Wajah")
-    print("4. Lihat Daftar Dataset")
-    print("5. keluar")
+    """Displays the main menu."""
+    print("\n===== FACE RECOGNITION SYSTEM MENU =====")
+    print("1. Run Face Recognition")
+    print("2. Add New Face Data")
+    print("3. Delete Face Data")
+    print("4. View Dataset List")
+    print("5. Exit")
     print("========================================")
-    return input("Pilih opsi (1-5): ")
+    return input("Select an option (1-5): ")
 
 def main():
-    """Fungsi utama untuk menjalankan program."""
-    # Pastikan folder dataset ada
+    """Main function to run the application."""
+    # Ensure the dataset directory exists
     if not os.path.exists("dataset"):
         os.makedirs("dataset")
 
@@ -24,28 +24,27 @@ def main():
         choice = display_menu()
 
         if choice == '1':
-            run_continuous_recognition() # <--- PERUBAHAN DI SINI
+            run_continuous_recognition()
         
         elif choice == '2':
-            # Jika berhasil menambah orang, otomatis regenerate encoding
+            # If a person is added successfully, regenerate encodings automatically
             if add_new_person():
                 regenerate_encodings()
 
         elif choice == '3':
-            # Jika berhasil menghapus orang, otomatis regenerate encoding
+            # If a person is deleted successfully, regenerate encodings automatically
             if delete_person():
                 regenerate_encodings()
 
         elif choice == '4':
-            if list_datasets(): # Anda mungkin ingin berpikir ulang logika ini, list_datasets() biasanya hanya menampilkan dan tidak mengembalikan True/False untuk regenerate encodings.
-                regenerate_encodings() # Ini akan dipanggil hanya jika list_datasets mengembalikan True
+            list_datasets()
 
         elif choice == '5':
-            print("Terima kasih telah menggunakan sistem ini. Sampai jumpa!")
+            print("Thank you for using the system. Goodbye!")
             break
         
         else:
-            print("Pilihan tidak valid, silakan coba lagi.")
+            print("Invalid option, please try again.")
 
 if __name__ == "__main__":
-    main() # <--- Tambahkan panggilan main() di sini agar program berjalan
+    main()

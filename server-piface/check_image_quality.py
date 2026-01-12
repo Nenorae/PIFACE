@@ -1,12 +1,13 @@
 # check_image_quality.py
 import os
 import cv2
-from PIL import Image
 import numpy as np
 
 def check_image_quality(dataset_path="dataset"):
     """
-    Cek kualitas gambar dalam dataset
+    Analyzes images in the dataset for common quality issues.
+    
+    Checks for file size, resolution, blurriness, and brightness.
     """
     print("Checking image quality in dataset...")
     
@@ -24,28 +25,25 @@ def check_image_quality(dataset_path="dataset"):
             image_path = os.path.join(person_path, filename)
             
             try:
-                # Cek ukuran file
+                # Check file size
                 file_size = os.path.getsize(image_path)
                 
-                # Baca dengan OpenCV
+                # Read with OpenCV
                 img = cv2.imread(image_path)
                 if img is None:
-                    print(f"❌ {filename}: Cannot read image")
+                    print(f"❌ {filename}: Cannot be read")
                     continue
                 
                 height, width = img.shape[:2]
                 
-                # Cek blur (Laplacian variance)
+                # Check for blur (Laplacian variance)
                 gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
                 blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
                 
-                # Cek brightness
+                # Check brightness
                 brightness = np.mean(gray)
                 
-                # Status
-                status = "✅"
                 issues = []
-                
                 if file_size < 5000:  # Less than 5KB
                     issues.append("too small")
                 if width < 100 or height < 100:
@@ -57,8 +55,7 @@ def check_image_quality(dataset_path="dataset"):
                 elif brightness > 200:
                     issues.append("too bright")
                 
-                if issues:
-                    status = "⚠️"
+                status = "✅" if not issues else "⚠️"
                 
                 print(f"{status} {filename}: {width}x{height}, {file_size}B, blur:{blur_score:.1f}, brightness:{brightness:.1f}")
                 if issues:

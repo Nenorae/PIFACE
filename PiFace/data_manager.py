@@ -7,20 +7,20 @@ DATASET_DIR = "dataset"
 SAMPLES_PER_PERSON = 20
 
 def add_new_person():
-    """Menjalankan proses pengambilan sampel wajah untuk orang baru."""
-    person_name = input("Masukkan nama orang (tanpa spasi): ").strip().title()
+    """Captures face samples for a new person."""
+    person_name = input("Enter person's name (no spaces): ").strip().title()
     if not person_name:
-        print("Nama tidak boleh kosong.")
+        print("Name cannot be empty.")
         return False
 
     person_path = os.path.join(DATASET_DIR, person_name)
 
     if os.path.exists(person_path):
-        print(f"Error: Nama '{person_name}' sudah ada di dataset.")
+        print(f"Error: Name '{person_name}' already exists in the dataset.")
         return False
 
     os.makedirs(person_path)
-    print(f"Folder '{person_path}' dibuat.")
+    print(f"Directory '{person_path}' created.")
 
     cap = cv2.VideoCapture(0)
     count = 0
@@ -28,94 +28,94 @@ def add_new_person():
     while count < SAMPLES_PER_PERSON:
         ret, frame = cap.read()
         if not ret:
-            print("Gagal membaca frame dari kamera.")
+            print("Failed to read frame from camera.")
             break
 
         frame_copy = frame.copy()
         detections = face_utils.detect_faces(frame_copy)
 
-        # Tampilan visual di layar
-        status_text = f"Gambar {count}/{SAMPLES_PER_PERSON}"
+        # Visual feedback on screen
+        status_text = f"Image {count}/{SAMPLES_PER_PERSON}"
         cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         if detections:
             box = face_utils.get_bounding_box(frame_copy, detections[0])
             if box:
                 x, y, w, h = box['xmin'], box['ymin'], box['width'], box['height']
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-        cv2.imshow(f"Tambah Wajah: {person_name} - Tekan 's' untuk simpan", frame)
+        cv2.imshow(f"Add Face: {person_name} - Press 's' to save", frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s') and detections:
             img_path = os.path.join(person_path, f"{count}.jpg")
             cv2.imwrite(img_path, frame_copy)
-            print(f"Gambar {count+1} disimpan.")
+            print(f"Image {count+1} saved.")
             count += 1
         elif key == ord('q'):
-            print("Proses dibatalkan.")
-            shutil.rmtree(person_path) # Hapus folder jika proses tidak selesai
+            print("Process canceled.")
+            shutil.rmtree(person_path) # Clean up directory if process is not completed
             cap.release()
             cv2.destroyAllWindows()
             return False
 
-    print(f"\nSelesai! {count} sampel wajah untuk '{person_name}' telah disimpan.")
+    print(f"\nDone! {count} face samples for '{person_name}' have been saved.")
     cap.release()
     cv2.destroyAllWindows()
     return True
 
 def delete_person():
-    """Menghapus data wajah orang dari dataset."""
+    """Deletes a person's face data from the dataset."""
     if not os.path.exists(DATASET_DIR) or not os.listdir(DATASET_DIR):
-        print("Dataset kosong. Tidak ada data untuk dihapus.")
+        print("Dataset is empty. No data to delete.")
         return False
 
-    print("Pilih nama yang akan dihapus:")
+    print("Select a name to delete:")
     people = [name for name in os.listdir(DATASET_DIR) if os.path.isdir(os.path.join(DATASET_DIR, name))]
     
     for i, name in enumerate(people):
         print(f"{i + 1}: {name}")
     
     try:
-        choice = int(input(f"Masukkan nomor (1-{len(people)}): "))
+        choice = int(input(f"Enter number (1-{len(people)}): "))
         if 1 <= choice <= len(people):
             person_to_delete = people[choice - 1]
-            confirm = input(f"Anda yakin ingin menghapus semua data untuk '{person_to_delete}'? (y/n): ").lower()
+            confirm = input(f"Are you sure you want to delete all data for '{person_to_delete}'? (y/n): ").lower()
             if confirm == 'y':
                 shutil.rmtree(os.path.join(DATASET_DIR, person_to_delete))
-                print(f"Data untuk '{person_to_delete}' telah dihapus.")
+                print(f"Data for '{person_to_delete}' has been deleted.")
                 return True
             else:
-                print("Penghapusan dibatalkan.")
+                print("Deletion canceled.")
                 return False
         else:
-            print("Pilihan tidak valid.")
+            print("Invalid choice.")
             return False
     except ValueError:
-        print("Input tidak valid. Masukkan angka.")
+        print("Invalid input. Please enter a number.")
         return False
     
 
 def list_datasets():
-    """Menampilkan daftar semua orang yang ada di dalam dataset."""
-    print("\nMemeriksa dataset...")
+    """Lists all people in the dataset."""
+    print("\nChecking dataset...")
     if not os.path.exists(DATASET_DIR) or not os.listdir(DATASET_DIR):
-        print("-> Dataset masih kosong. Silakan tambah data baru.")
+        print("-> Dataset is empty. Please add new data.")
         return
 
-    # Ambil hanya direktori, dan urutkan berdasarkan abjad
+    # Get only directories, sorted alphabetically
     people = sorted([name for name in os.listdir(DATASET_DIR) if os.path.isdir(os.path.join(DATASET_DIR, name))])
     
     if not people:
-        print("-> Dataset tidak berisi folder orang yang valid.")
+        print("-> Dataset does not contain valid person folders.")
         return
 
-    print("\n===== Daftar Orang dalam Dataset =====")
+    print("\n===== People in Dataset =====")
     for i, name in enumerate(people):
-        # Hitung jumlah file gambar di dalam folder untuk informasi tambahan
+        # Count image files in the folder for additional information
         person_path = os.path.join(DATASET_DIR, name)
         try:
             num_images = len([f for f in os.listdir(person_path) if f.endswith(('.jpg', '.png', '.jpeg'))])
-            print(f"{i + 1}. {name} ({num_images} gambar)")
+            print(f"{i + 1}. {name} ({num_images} images)")
         except OSError:
-            print(f"{i + 1}. {name} (Error saat membaca folder)")
+            print(f"{i + 1}. {name} (Error reading folder)")
 
-    print("====================================")
+    print("============================")

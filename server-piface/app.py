@@ -1,4 +1,4 @@
-# app.py (ENHANCED VERSION - Improved Error Handling & Robustness)
+# app.py
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session as flask_session, abort
 from config import Config
 from models import db, Dosen, Mahasiswa, Matakuliah, Jadwal, SesiPerkuliahan, LogAbsensi
@@ -19,76 +19,73 @@ app.permanent_session_lifetime = timedelta(hours=8)
 db.init_app(app)
 migrate = Migrate(app, db)
 
-# === PENGATURAN & PEMUATAN MASTER EMBEDDING ===
+# --- SETTINGS & MASTER EMBEDDING LOADING ---
 MODEL_NAME = "VGG-Face"
 DETECTOR_BACKEND = "opencv"
-SIMILARITY_THRESHOLD = 0.55 # Threshold untuk Cosine SIMILARITY (lebih TINGGI lebih mirip)
+SIMILARITY_THRESHOLD = 0.55 # Cosine SIMILARITY threshold (HIGHER = more similar)
 MASTER_EMBEDDINGS_FILE = "master_embeddings.pkl"
-
-# Alternative detector backends untuk fallback
 FALLBACK_DETECTORS = ["retinaface", "mtcnn", "ssd"]
 
 known_embeddings_data = []
 
-# Muat data master embedding saat server pertama kali dimulai
 def load_master_embeddings():
+    """Loads master embeddings from the pickle file."""
     global known_embeddings_data
-    if os.path.exists(MASTER_EMBEDDINGS_FILE):
-        try:
-            print(f"[INFO] Memuat data master embedding dari '{MASTER_EMBEDDINGS_FILE}'...")
-            with open(MASTER_EMBEDDINGS_FILE, 'rb') as f:
-                known_embeddings_data = pickle.load(f)
-            print(f"✅ {len(known_embeddings_data)} master embedding berhasil dimuat.")
-            
-            # Validasi data yang dimuat
-            for i, data in enumerate(known_embeddings_data):
-                if not isinstance(data, dict) or 'name' not in data or 'embedding' not in data:
-                    print(f"[WARNING] Data embedding ke-{i} tidak valid, dilewati.")
-                    continue
-                if not isinstance(data['embedding'], (list, np.ndarray)):
-                    print(f"[WARNING] Embedding untuk {data['name']} tidak valid.")
-                    
-        except Exception as e:
-            print(f"[ERROR] Gagal memuat master embedding: {e}")
-            known_embeddings_data = []
-    else:
-        print(f"[WARNING] File '{MASTER_EMBEDDINGS_FILE}' tidak ditemukan. Jalankan create_master_embeddings.py terlebih dahulu.")
+    if not os.path.exists(MASTER_EMBEDDINGS_FILE):
+        print(f"[WARNING] Master embeddings file not found: '{MASTER_EMBEDDINGS_FILE}'. Run create_master_embeddings.py first.")
+        return
+        
+    try:
+        print(f"[INFO] Loading master embeddings from '{MASTER_EMBEDDINGS_FILE}'...")
+        with open(MASTER_EMBEDDINGS_FILE, 'rb') as f:
+            known_embeddings_data = pickle.load(f)
+        print(f"✅ {len(known_embeddings_data)} master embeddings loaded successfully.")
+        
+        # Validate loaded data
+        for i, data in enumerate(known_embeddings_data):
+            if not isinstance(data, dict) or 'name' not in data or 'embedding' not in data:
+                print(f"[WARNING] Invalid data format in embedding entry {i}, skipping.")
+                continue
+            if not isinstance(data['embedding'], (list, np.ndarray)):
+                print(f"[WARNING] Invalid embedding for {data['name']}.")
+                
+    except Exception as e:
+        print(f"[ERROR] Failed to load master embeddings: {e}")
+        known_embeddings_data = []
 
-# Load embeddings saat startup
+# Load embeddings on startup
 load_master_embeddings()
 
-# ===============================================
-# Variabel global untuk state sesi
-sesi_aktif = None
-mahasiswa_sudah_absen_server = set()
+# Global variables for session state
+active_session = None
+server_attendance_cache = set()
 
-# Decorator untuk memeriksa login dan peran secara konsisten
 def role_required(role):
-    def decorator(f):
-        @wraps(f)
-        def decorated_function(*args, **kwargs):
-            if 'user_id' not in flask_session or 'role' not in flask_session:
-                return redirect(url_for('login'))
-            if flask_session['role'] != role:
-                abort(403) # Forbidden: Login, tapi peran salah
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
+    """Decorator to enforce role-based access for routes."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in flask_session or 'role' not in flask_session:
+            return redirect(url_for('login'))
+        if flask_session['role'] != role:
+            abort(403) # Forbidden: User is logged in, but has the wrong role.
+        return f(*args, **kwargs)
+    return decorated_function
 
 @app.route('/', methods=['GET', 'POST'])
 def login():
-    global sesi_aktif
-    sesi_aktif = None
+    global active_session
+    active_session = None # Ensure session is cleared on login page
     flask_session.clear()
     if request.method == 'POST':
         role = request.form.get('role')
-        nama = request.form.get('nama', '').lower()
+        name = request.form.get('nama', '').lower()
         password = request.form.get('password', '')
+        
         user = None
         if role == 'dosen':
-            user = Dosen.query.filter(db.func.lower(Dosen.nama_dosen) == nama).first()
+            user = Dosen.query.filter(db.func.lower(Dosen.nama_dosen) == name).first()
         elif role == 'mahasiswa':
-            user = Mahasiswa.query.filter(db.func.lower(Mahasiswa.nama_mahasiswa) == nama).first()
+            user = Mahasiswa.query.filter(db.func.lower(Mahasiswa.nama_mahasiswa) == name).first()
         
         if user and check_password_hash(user.password_hash, password):
             flask_session['user_id'] = user.id
@@ -98,7 +95,7 @@ def login():
             if role == 'dosen': return redirect(url_for('dashboard'))
             elif role == 'mahasiswa': return redirect(url_for('rekap'))
         else:
-            return render_template('login.html', error="Nama Pengguna atau Password salah.")
+            return render_template('login.html', error="Invalid username or password.")
     return render_template('login.html')
 
 @app.route('/logout')
@@ -112,7 +109,7 @@ def dashboard():
     dosen_id = flask_session.get('user_id')
     dosen = db.session.get(Dosen, dosen_id)
     jadwal_list = Jadwal.query.filter_by(dosen_id=dosen_id).order_by(Jadwal.id).all()
-    return render_template('dashboard.html', jadwal_list=jadwal_list, nama_dosen=dosen.nama_dosen, sesi_aktif=sesi_aktif)
+    return render_template('dashboard.html', jadwal_list=jadwal_list, nama_dosen=dosen.nama_dosen, sesi_aktif=active_session)
 
 @app.route('/rekap')
 @role_required('mahasiswa')
@@ -120,462 +117,334 @@ def rekap():
     mahasiswa_id = flask_session.get('user_id')
     mahasiswa_terpilih = db.session.get(Mahasiswa, mahasiswa_id)
     rekap_data = {}
-    semua_matakuliah = Matakuliah.query.order_by(Matakuliah.nama_mk).all()
-    for mk in semua_matakuliah:
-        rekap_data[mk.nama_mk] = ['Belum Diadakan'] * 16
-        sesi_terselenggara = SesiPerkuliahan.query.join(Jadwal).filter(Jadwal.mk_id == mk.id).filter(SesiPerkuliahan.waktu_selesai != None).all()
-        for sesi in sesi_terselenggara:
+    all_courses = Matakuliah.query.order_by(Matakuliah.nama_mk).all()
+    for mk in all_courses:
+        rekap_data[mk.nama_mk] = ['Belum Diadakan'] * 16 # 'Not Held Yet'
+        held_sessions = SesiPerkuliahan.query.join(Jadwal).filter(Jadwal.mk_id == mk.id).filter(SesiPerkuliahan.waktu_selesai != None).all()
+        for sesi in held_sessions:
             pertemuan_ke = sesi.pertemuan_ke
             if pertemuan_ke and 1 <= pertemuan_ke <= 16:
                 log = LogAbsensi.query.filter_by(sesi_id=sesi.id, mahasiswa_id=mahasiswa_id).first()
-                if log: rekap_data[mk.nama_mk][pertemuan_ke - 1] = 'Hadir'
-                else: rekap_data[mk.nama_mk][pertemuan_ke - 1] = 'Tidak Hadir'
+                rekap_data[mk.nama_mk][pertemuan_ke - 1] = 'Hadir' if log else 'Tidak Hadir' # 'Present' / 'Absent'
     return render_template('rekap.html', rekap_data=rekap_data, mahasiswa_terpilih=mahasiswa_terpilih)
 
-# --- API ENDPOINTS DENGAN OTORISASI YANG BENAR ---
+# --- API ENDPOINTS ---
 @app.route('/api/mulai_sesi', methods=['POST'])
 @role_required('dosen')
 def mulai_sesi():
-    global sesi_aktif, mahasiswa_sudah_absen_server
-    if sesi_aktif: return jsonify({"status": "error", "message": "Sesi lain masih aktif."}), 400
-    mahasiswa_sudah_absen_server.clear()
-    sesi_baru = SesiPerkuliahan(
+    """Starts a new lecture session."""
+    global active_session, server_attendance_cache
+    if active_session: 
+        return jsonify({"status": "error", "message": "Another session is already active."}), 400
+    
+    server_attendance_cache.clear()
+    new_session = SesiPerkuliahan(
         jadwal_id=request.json.get('jadwal_id'), 
         dosen_pengajar_id=flask_session['user_id'],
         pertemuan_ke=request.json.get('pertemuan_ke'),
         waktu_mulai=datetime.now()
     )
-    db.session.add(sesi_baru)
+    db.session.add(new_session)
     db.session.commit()
-    sesi_aktif = {"sesi_db_id": sesi_baru.id, "jadwal_id": request.json.get('jadwal_id')}
-    print(f"Sesi Dimulai: {sesi_aktif}")
-    return jsonify({"status": "sukses", "message": f"Sesi untuk pertemuan ke-{sesi_baru.pertemuan_ke} berhasil dimulai"})
+    active_session = {"sesi_db_id": new_session.id, "jadwal_id": request.json.get('jadwal_id')}
+    print(f"Session Started: {active_session}")
+    return jsonify({"status": "success", "message": f"Session for meeting number {new_session.pertemuan_ke} started successfully."})
 
 @app.route('/api/selesai_sesi', methods=['POST'])
 @role_required('dosen')
 def selesai_sesi():
-    global sesi_aktif, mahasiswa_sudah_absen_server
-    if not sesi_aktif: return jsonify({"status": "error", "message": "Tidak ada sesi aktif."}), 400
-    sesi_id = sesi_aktif['sesi_db_id']
-    sesi_db = db.session.get(SesiPerkuliahan, sesi_id)
-    if sesi_db:
-        sesi_db.waktu_selesai = datetime.now()
+    """Ends the currently active lecture session."""
+    global active_session, server_attendance_cache
+    if not active_session: 
+        return jsonify({"status": "error", "message": "No active session to end."}), 400
+    
+    session_id = active_session['sesi_db_id']
+    session_db = db.session.get(SesiPerkuliahan, session_id)
+    if session_db:
+        session_db.waktu_selesai = datetime.now()
         db.session.commit()
-    mahasiswa_sudah_absen_server.clear()
-    print(f"Sesi Selesai, ID: {sesi_id}")
-    sesi_aktif = None
-    return jsonify({"status": "sukses", "message": "Sesi telah berakhir"})
+        
+    server_attendance_cache.clear()
+    print(f"Session Finished, ID: {session_id}")
+    active_session = None
+    return jsonify({"status": "success", "message": "Session has been ended."})
 
 def cosine_similarity(source_embedding, target_embedding):
-    """
-    Hitung cosine similarity antara dua embedding
-    """
+    """Calculates cosine similarity between two embeddings."""
     try:
         a = np.asarray(source_embedding)
         b = np.asarray(target_embedding)
-        
-        # Pastikan tidak ada pembagian dengan nol
         norm_a = np.linalg.norm(a)
         norm_b = np.linalg.norm(b)
-        
         if norm_a == 0 or norm_b == 0:
             return 0.0
-            
         return np.dot(a, b) / (norm_a * norm_b)
     except Exception as e:
-        print(f"[ERROR] Gagal menghitung cosine similarity: {e}")
+        print(f"[ERROR] Could not calculate cosine similarity: {e}")
         return 0.0
 
 def create_embedding_with_fallback(image_path):
-    """
-    Buat embedding dengan fallback ke detector lain jika gagal
-    """
-    # Coba detector utama dulu
+    """Creates a face embedding, trying multiple detectors as a fallback."""
+    # Try the primary detector first
     try:
         embedding = DeepFace.represent(
-            img_path=image_path,
-            model_name=MODEL_NAME,
-            enforce_detection=True,
-            detector_backend=DETECTOR_BACKEND,
-            align=True
+            img_path=image_path, model_name=MODEL_NAME, enforce_detection=True,
+            detector_backend=DETECTOR_BACKEND, align=True
         )[0]["embedding"]
-        print(f"[SUCCESS] Embedding berhasil dibuat dengan {DETECTOR_BACKEND}")
+        print(f"[INFO] Embedding created successfully with {DETECTOR_BACKEND}")
         return embedding
     except Exception as e:
-        print(f"[WARNING] Detector {DETECTOR_BACKEND} gagal: {e}")
+        print(f"[WARNING] Primary detector {DETECTOR_BACKEND} failed: {e}")
     
-    # Coba detector fallback
+    # Try fallback detectors
     for detector in FALLBACK_DETECTORS:
         try:
             embedding = DeepFace.represent(
-                img_path=image_path,
-                model_name=MODEL_NAME,
-                enforce_detection=True,
-                detector_backend=detector,
-                align=True
+                img_path=image_path, model_name=MODEL_NAME, enforce_detection=True,
+                detector_backend=detector, align=True
             )[0]["embedding"]
-            print(f"[SUCCESS] Embedding berhasil dibuat dengan {detector}")
+            print(f"[INFO] Embedding created successfully with fallback {detector}")
             return embedding
-        except Exception as e:
-            print(f"[WARNING] Detector {detector} gagal: {e}")
+        except Exception:
             continue
     
-    # Terakhir, coba dengan enforce_detection=False
+    # Finally, try with enforce_detection=False
     try:
         embedding = DeepFace.represent(
-            img_path=image_path,
-            model_name=MODEL_NAME,
-            enforce_detection=False,  # Lebih permisif
-            detector_backend=DETECTOR_BACKEND,
-            align=True
+            img_path=image_path, model_name=MODEL_NAME, enforce_detection=False,
+            detector_backend=DETECTOR_BACKEND, align=True
         )[0]["embedding"]
-        print(f"[SUCCESS] Embedding berhasil dibuat dengan enforce_detection=False")
+        print(f"[INFO] Embedding created successfully with enforce_detection=False")
         return embedding
     except Exception as e:
-        print(f"[ERROR] Semua metode gagal: {e}")
+        print(f"[ERROR] All embedding methods failed: {e}")
         raise e
-
-# === FUNGSI INTI YANG DITINGKATKAN ===
-# Perbaikan untuk fungsi recognize_and_attend dengan debugging yang lebih baik
 
 @app.route('/api/recognize_and_attend', methods=['POST'])
 def recognize_and_attend():
-    if not sesi_aktif: 
-        print("[DEBUG] Sesi tidak aktif")
-        return jsonify({"message": "Sesi tidak aktif, absensi ditolak."}), 400
+    """Recognizes a face from an image and records attendance."""
+    if not active_session: 
+        return jsonify({"message": "Session is not active. Attendance denied."}), 400
     
     if not known_embeddings_data:
-        print("[DEBUG] Master embedding belum dimuat")
-        return jsonify({"message": "Master embedding belum dimuat. Hubungi administrator."}), 500
+        return jsonify({"message": "Master embeddings not loaded. Please contact an administrator."}), 500
     
     if 'image' not in request.files: 
-        print("[DEBUG] Tidak ada file gambar")
-        return jsonify({"message": "Tidak ada file gambar."}), 400
+        return jsonify({"message": "No image file provided."}), 400
     
     file = request.files['image']
     if not file or file.filename == '': 
-        print("[DEBUG] File gambar tidak valid")
-        return jsonify({"message": "File gambar tidak valid."}), 400
+        return jsonify({"message": "Invalid image file."}), 400
     
     filename = secure_filename(f"{int(time.time())}_capture.jpg")
     temp_path = os.path.join("/tmp", filename)
     
     try:
         file.save(temp_path)
-        print(f"[DEBUG] Gambar disimpan: {temp_path}")
         
-        # Validasi ukuran file
-        file_size = os.path.getsize(temp_path)
-        if file_size < 1000:  # Kurang dari 1KB
-            print(f"[DEBUG] File terlalu kecil: {file_size} bytes")
-            return jsonify({"message": "Gambar terlalu kecil atau rusak."}), 400
+        if os.path.getsize(temp_path) < 1000:  # Less than 1KB is likely corrupt
+            return jsonify({"message": "Image is too small or corrupt."}), 400
         
-        print(f"[DEBUG] Ukuran file: {file_size} bytes")
-        print("[DEBUG] Membuat embedding untuk gambar baru...")
-        
-        # 1. Buat embedding untuk gambar yang baru datang
+        # 1. Create embedding for the new image
         live_embedding = create_embedding_with_fallback(temp_path)
-        print("[DEBUG] Embedding berhasil dibuat.")
         
-        # 2. Cari yang paling cocok dari data MASTER EMBEDDING
-        best_match_name = "Tidak Dikenal"
+        # 2. Find the best match from master embeddings
+        best_match_name = "Unknown"
         highest_similarity = 0.0
         
-        print(f"[DEBUG] Membandingkan dengan {len(known_embeddings_data)} master embedding...")
-        
-        for i, data in enumerate(known_embeddings_data):
+        for data in known_embeddings_data:
             try:
                 similarity = cosine_similarity(live_embedding, data["embedding"])
-                print(f"[DEBUG] Similarity dengan {data['name']}: {similarity:.3f}")
                 if similarity > highest_similarity:
                     highest_similarity = similarity
                     best_match_name = data["name"]
             except Exception as e:
-                print(f"[ERROR] Gagal membandingkan dengan {data.get('name', 'Unknown')}: {e}")
+                print(f"[ERROR] Failed to compare with {data.get('name', 'N/A')}: {e}")
                 continue
         
-        print(f"[DEBUG] Best match: {best_match_name} dengan similarity: {highest_similarity:.3f}")
-        print(f"[DEBUG] Threshold: {SIMILARITY_THRESHOLD}")
+        print(f"[INFO] Best match: {best_match_name} with similarity: {highest_similarity:.3f} (Threshold: {SIMILARITY_THRESHOLD})")
         
-        # 3. Periksa apakah kemiripan terbaik sudah melewati ambang batas
+        # 3. Check if the best match meets the threshold
         if highest_similarity >= SIMILARITY_THRESHOLD:
             name = best_match_name
-            print(f"[DEBUG] Similarity melewati threshold, nama: {name}")
             
-            # Cek apakah sudah absen di sesi ini
-            if name in mahasiswa_sudah_absen_server:
-                print(f"[DEBUG] {name} sudah absen di server cache")
-                return jsonify({"message": f"{name} sudah tercatat absen."})
+            if name in server_attendance_cache:
+                return jsonify({"message": f"{name} has already been marked present."})
             
-            # Cari mahasiswa di database dengan case-insensitive
-            print(f"[DEBUG] Mencari mahasiswa dengan nama: {name}")
             mahasiswa = Mahasiswa.query.filter(db.func.lower(Mahasiswa.nama_mahasiswa) == name.lower()).first()
             
             if mahasiswa:
-                print(f"[DEBUG] Mahasiswa ditemukan: ID={mahasiswa.id}, Nama={mahasiswa.nama_mahasiswa}")
-                
-                # Cek apakah sudah absen di database untuk sesi ini
                 existing_log = LogAbsensi.query.filter_by(
-                    sesi_id=sesi_aktif['sesi_db_id'], 
+                    sesi_id=active_session['sesi_db_id'], 
                     mahasiswa_id=mahasiswa.id
                 ).first()
                 
                 if existing_log:
-                    print(f"[DEBUG] {name} sudah absen di database")
-                    mahasiswa_sudah_absen_server.add(name)  # Sync cache
-                    return jsonify({"message": f"{name} sudah tercatat absen di database."})
+                    server_attendance_cache.add(name) # Sync cache
+                    return jsonify({"message": f"{name} is already recorded in the database."})
                 
                 try:
-                    # Catat absensi baru
-                    print(f"[DEBUG] Membuat log absensi baru...")
-                    log_baru = LogAbsensi(
-                        sesi_id=sesi_aktif['sesi_db_id'], 
+                    # Record new attendance
+                    new_log = LogAbsensi(
+                        sesi_id=active_session['sesi_db_id'], 
                         mahasiswa_id=mahasiswa.id, 
                         waktu_absen=datetime.now()
                     )
-                    
-                    print(f"[DEBUG] Log absensi: sesi_id={log_baru.sesi_id}, mahasiswa_id={log_baru.mahasiswa_id}")
-                    
-                    db.session.add(log_baru)
+                    db.session.add(new_log)
                     db.session.commit()
                     
-                    print(f"[DEBUG] Absensi berhasil disimpan ke database")
-                    
-                    # Tambahkan ke cache server
-                    mahasiswa_sudah_absen_server.add(name)
-                    
-                    # Verifikasi apakah data benar-benar tersimpan
-                    verify_log = LogAbsensi.query.filter_by(
-                        sesi_id=sesi_aktif['sesi_db_id'], 
-                        mahasiswa_id=mahasiswa.id
-                    ).first()
-                    
-                    if verify_log:
-                        print(f"[DEBUG] ✅ Verifikasi: Data absensi tersimpan dengan ID {verify_log.id}")
-                    else:
-                        print(f"[DEBUG] ❌ Verifikasi: Data absensi TIDAK tersimpan!")
-                        
-                    print(f"[SUCCESS] Absensi berhasil untuk: {name} (Similarity: {highest_similarity:.3f})")
+                    server_attendance_cache.add(name)
+                    print(f"[SUCCESS] Attendance recorded for: {name} (Similarity: {highest_similarity:.3f})")
                     
                     return jsonify({
-                        "message": f"Absensi {name} berhasil disimpan! (Similarity: {highest_similarity:.2f})",
-                        "recognized": True,
+                        "message": f"Attendance for {name} saved successfully! (Similarity: {highest_similarity:.2f})",
                         "name": name,
-                        "similarity": round(highest_similarity, 3),
-                        "saved_to_db": True
                     })
                     
                 except Exception as db_error:
-                    print(f"[ERROR] Gagal menyimpan ke database: {db_error}")
-                    db.session.rollback()  # Rollback jika ada error
-                    return jsonify({
-                        "message": f"Wajah dikenali sebagai {name}, tapi gagal menyimpan absensi: {str(db_error)}",
-                        "recognized": True,
-                        "name": name,
-                        "similarity": round(highest_similarity, 3),
-                        "saved_to_db": False
-                    }), 500
+                    print(f"[ERROR] Failed to save to database: {db_error}")
+                    db.session.rollback()
+                    return jsonify({"message": f"Face recognized as {name}, but failed to save attendance."}), 500
                     
-            else:
-                print(f"[DEBUG] Mahasiswa dengan nama '{name}' TIDAK ditemukan di database")
-                # Tampilkan semua mahasiswa untuk debugging
-                all_mahasiswa = Mahasiswa.query.all()
-                print(f"[DEBUG] Daftar mahasiswa di database:")
-                for mhs in all_mahasiswa:
-                    print(f"  - ID: {mhs.id}, Nama: '{mhs.nama_mahasiswa}'")
-                
-                return jsonify({
-                    "message": f"Wajah dikenali sebagai '{name}', tapi tidak terdaftar di database.",
-                    "recognized": True,
-                    "name": name,
-                    "similarity": round(highest_similarity, 3),
-                    "saved_to_db": False
-                })
-        else:
-            print(f"[DEBUG] Similarity {highest_similarity:.3f} di bawah threshold {SIMILARITY_THRESHOLD}")
+            else: # Face recognized, but student not in DB
+                print(f"[WARNING] Face recognized as '{name}', but they are not registered in the database.")
+                return jsonify({"message": f"Face recognized as '{name}', but not registered in the database."})
+        
+        else: # Similarity below threshold
             return jsonify({
-                "message": f"Wajah terdeteksi, tapi tidak dikenali (Similarity tertinggi: {highest_similarity:.2f}).",
+                "message": f"Face detected, but not recognized (Highest similarity: {highest_similarity:.2f}).",
                 "recognized": False,
-                "similarity": round(highest_similarity, 3),
-                "best_match": best_match_name
             })
             
     except Exception as e:
-        print(f"❌ [ERROR] Gagal memproses gambar: {e}")
+        print(f"❌ [ERROR] Failed to process image: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"message": f"Error memproses gambar: {str(e)}"}), 500
+        return jsonify({"message": f"An error occurred while processing the image: {str(e)}"}), 500
     finally:
-        # Bersihkan file temporary
         if os.path.exists(temp_path):
-            try:
-                os.remove(temp_path)
-                print(f"[DEBUG] File temporary {temp_path} dihapus")
-            except Exception as e:
-                print(f"[WARNING] Gagal menghapus file temporary: {e}")
-
-
-# Tambahkan endpoint untuk debugging database
-@app.route('/api/debug_database')
-@role_required('dosen')
-def debug_database():
-    """
-    Endpoint untuk debugging database
-    """
-    try:
-        # Info sesi aktif
-        sesi_info = None
-        if sesi_aktif:
-            sesi_db = db.session.get(SesiPerkuliahan, sesi_aktif['sesi_db_id'])
-            if sesi_db:
-                sesi_info = {
-                    "id": sesi_db.id,
-                    "jadwal_id": sesi_db.jadwal_id,
-                    "pertemuan_ke": sesi_db.pertemuan_ke,
-                    "waktu_mulai": sesi_db.waktu_mulai.strftime('%Y-%m-%d %H:%M:%S') if sesi_db.waktu_mulai else None
-                }
-        
-        # Daftar mahasiswa
-        mahasiswa_list = []
-        for mhs in Mahasiswa.query.all():
-            mahasiswa_list.append({
-                "id": mhs.id,
-                "nama": mhs.nama_mahasiswa
-            })
-        
-        # Log absensi untuk sesi aktif
-        log_absensi = []
-        if sesi_aktif:
-            logs = LogAbsensi.query.filter_by(sesi_id=sesi_aktif['sesi_db_id']).all()
-            for log in logs:
-                mahasiswa = db.session.get(Mahasiswa, log.mahasiswa_id)
-                log_absensi.append({
-                    "id": log.id,
-                    "mahasiswa_id": log.mahasiswa_id,
-                    "nama_mahasiswa": mahasiswa.nama_mahasiswa if mahasiswa else "Unknown",
-                    "waktu_absen": log.waktu_absen.strftime('%Y-%m-%d %H:%M:%S')
-                })
-        
-        return jsonify({
-            "sesi_aktif": sesi_info,
-            "mahasiswa_cache": list(mahasiswa_sudah_absen_server),
-            "total_mahasiswa_db": len(mahasiswa_list),
-            "mahasiswa_list": mahasiswa_list,
-            "log_absensi_sesi_ini": log_absensi,
-            "embeddings_loaded": len(known_embeddings_data)
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-# Tambahkan endpoint untuk manual attendance (untuk testing)
-@app.route('/api/manual_attend', methods=['POST'])
-@role_required('dosen')
-def manual_attend():
-    """
-    Endpoint untuk absensi manual (untuk testing)
-    """
-    if not sesi_aktif:
-        return jsonify({"message": "Sesi tidak aktif"}), 400
-    
-    data = request.get_json()
-    mahasiswa_id = data.get('mahasiswa_id')
-    
-    if not mahasiswa_id:
-        return jsonify({"message": "mahasiswa_id diperlukan"}), 400
-    
-    # Cek apakah mahasiswa ada
-    mahasiswa = db.session.get(Mahasiswa, mahasiswa_id)
-    if not mahasiswa:
-        return jsonify({"message": "Mahasiswa tidak ditemukan"}), 404
-    
-    # Cek apakah sudah absen
-    existing_log = LogAbsensi.query.filter_by(
-        sesi_id=sesi_aktif['sesi_db_id'],
-        mahasiswa_id=mahasiswa_id
-    ).first()
-    
-    if existing_log:
-        return jsonify({"message": f"{mahasiswa.nama_mahasiswa} sudah absen"})
-    
-    try:
-        # Buat log absensi
-        log_baru = LogAbsensi(
-            sesi_id=sesi_aktif['sesi_db_id'],
-            mahasiswa_id=mahasiswa_id,
-            waktu_absen=datetime.now()
-        )
-        
-        db.session.add(log_baru)
-        db.session.commit()
-        
-        return jsonify({
-            "message": f"Absensi manual untuk {mahasiswa.nama_mahasiswa} berhasil",
-            "log_id": log_baru.id
-        })
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"message": f"Error: {str(e)}"}), 500
-
+            os.remove(temp_path)
 
 @app.route('/api/status_sesi')
 def status_sesi():
-    if sesi_aktif: 
+    """Returns the current session status."""
+    if active_session: 
         return jsonify({
-            "status": "aktif", 
-            "sesi_id": sesi_aktif.get('sesi_db_id'),
+            "status": "aktif", # 'active'
+            "sesi_id": active_session.get('sesi_db_id'),
             "embeddings_loaded": len(known_embeddings_data)
         })
     else: 
         return jsonify({
-            "status": "tidak_aktif", 
+            "status": "tidak_aktif", # 'inactive'
             "sesi_id": None,
             "embeddings_loaded": len(known_embeddings_data)
         })
 
 @app.route('/api/log_absen_terkini')
 def get_log_absen_terkini():
-    if not sesi_aktif: return jsonify([])
-    sesi_id = sesi_aktif['sesi_db_id']
+    """Gets the latest attendance logs for the active session."""
+    if not active_session: return jsonify([])
+    
     logs = db.session.query(Mahasiswa.nama_mahasiswa, LogAbsensi.waktu_absen)\
         .join(Mahasiswa, Mahasiswa.id == LogAbsensi.mahasiswa_id)\
-        .filter(LogAbsensi.sesi_id == sesi_id)\
+        .filter(LogAbsensi.sesi_id == active_session['sesi_db_id'])\
         .order_by(LogAbsensi.id.asc()).all()
+        
     log_list = [{"nama_mahasiswa": l.nama_mahasiswa, "waktu_absen": l.waktu_absen.strftime('%H:%M:%S')} for l in logs]
     return jsonify(log_list)
 
 @app.route('/api/reload_embeddings', methods=['POST'])
 @role_required('dosen')
 def reload_embeddings():
-    """
-    Endpoint untuk reload master embeddings tanpa restart server
-    """
+    """Reloads master embeddings from file without a server restart."""
     try:
         load_master_embeddings()
         return jsonify({
             "status": "success", 
-            "message": f"Master embedding berhasil dimuat ulang. Total: {len(known_embeddings_data)} embeddings."
+            "message": f"Master embeddings reloaded successfully. Total: {len(known_embeddings_data)} embeddings."
         })
     except Exception as e:
-        return jsonify({
-            "status": "error", 
-            "message": f"Gagal memuat ulang embeddings: {str(e)}"
-        }), 500
+        return jsonify({"status": "error", "message": f"Failed to reload embeddings: {str(e)}"}), 500
 
 @app.route('/api/system_info')
 def system_info():
-    """
-    Endpoint untuk info sistem
-    """
+    """Provides system information like loaded embeddings and settings."""
     return jsonify({
         "embeddings_loaded": len(known_embeddings_data),
         "similarity_threshold": SIMILARITY_THRESHOLD,
         "model_name": MODEL_NAME,
         "detector_backend": DETECTOR_BACKEND,
-        "sesi_aktif": sesi_aktif is not None
+        "session_active": active_session is not None
     })
+
+# The following endpoints are for debugging and testing purposes.
+@app.route('/api/debug_database')
+@role_required('dosen')
+def debug_database():
+    """Provides a snapshot of the current database and session state for debugging."""
+    try:
+        sesi_info = None
+        if active_session:
+            sesi_db = db.session.get(SesiPerkuliahan, active_session['sesi_db_id'])
+            if sesi_db:
+                sesi_info = { "id": sesi_db.id, "jadwal_id": sesi_db.jadwal_id, "pertemuan_ke": sesi_db.pertemuan_ke }
+        
+        mahasiswa_list = [{"id": m.id, "nama": m.nama_mahasiswa} for m in Mahasiswa.query.all()]
+        
+        log_absensi = []
+        if active_session:
+            logs = LogAbsensi.query.filter_by(sesi_id=active_session['sesi_db_id']).all()
+            for log in logs:
+                mahasiswa = db.session.get(Mahasiswa, log.mahasiswa_id)
+                log_absensi.append({
+                    "log_id": log.id,
+                    "student_name": mahasiswa.nama_mahasiswa if mahasiswa else "Unknown",
+                    "timestamp": log.waktu_absen.strftime('%Y-%m-%d %H:%M:%S')
+                })
+        
+        return jsonify({
+            "active_session": sesi_info,
+            "attendance_cache": list(server_attendance_cache),
+            "total_students_in_db": len(mahasiswa_list),
+            "student_list": mahasiswa_list,
+            "current_session_logs": log_absensi,
+            "embeddings_loaded": len(known_embeddings_data)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/manual_attend', methods=['POST'])
+@role_required('dosen')
+def manual_attend():
+    """Allows a lecturer to manually mark a student as present for testing."""
+    if not active_session:
+        return jsonify({"message": "Session is not active."}), 400
+    
+    data = request.get_json()
+    mahasiswa_id = data.get('mahasiswa_id')
+    if not mahasiswa_id:
+        return jsonify({"message": "mahasiswa_id is required."}), 400
+    
+    mahasiswa = db.session.get(Mahasiswa, mahasiswa_id)
+    if not mahasiswa:
+        return jsonify({"message": "Student not found."}), 404
+    
+    if LogAbsensi.query.filter_by(sesi_id=active_session['sesi_db_id'], mahasiswa_id=mahasiswa_id).first():
+        return jsonify({"message": f"{mahasiswa.nama_mahasiswa} is already marked present."})
+    
+    try:
+        new_log = LogAbsensi(
+            sesi_id=active_session['sesi_db_id'],
+            mahasiswa_id=mahasiswa_id,
+            waktu_absen=datetime.now()
+        )
+        db.session.add(new_log)
+        db.session.commit()
+        return jsonify({"message": f"Manual attendance for {mahasiswa.nama_mahasiswa} successful."})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"message": f"Database error: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

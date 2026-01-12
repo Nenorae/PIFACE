@@ -1,18 +1,15 @@
 # config.py
-
 import os
 
-# Menentukan path dasar proyek
 basedir = os.path.abspath(os.path.dirname(__file__))
 
 class Config:
-    # Kunci rahasia untuk Flask session
-    SECRET_KEY = os.environ.get('SECRET_KEY') or 'kunci_rahasia_super_aman_sekali'
+    """Application configuration settings."""
+    # Secret key for session management
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'a-super-secure-and-unguessable-key'
     
-    # Nonaktifkan fitur modifikasi yang tidak kita perlukan
+    # Disable SQLAlchemy event system to save resources
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # --- KONFIGURASI KONEKSI DATABASE POSTGRESQL ---
-    # Format: postgresql://<user>:<password>@<host>:<port>/<dbname>
-    # Kita menggunakan user dan database yang kita buat tadi
+    # Database connection URI
     SQLALCHEMY_DATABASE_URI = 'postgresql://absensi_user:password123@localhost:5432/absensi_db'

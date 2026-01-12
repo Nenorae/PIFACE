@@ -7,14 +7,14 @@ DATASET_DIR = "dataset"
 ENCODINGS_FILE = "encodings.pkl"
 
 def regenerate_encodings():
-    """Memproses ulang semua gambar di dataset dan menyimpan ke file .pkl."""
-    print("Memulai proses encoding ulang...")
+    """Reprocesses all images in the dataset and saves encodings to a .pkl file."""
+    print("Starting re-encoding process...")
 
     known_encodings = []
     known_names = []
 
     if not os.path.exists(DATASET_DIR) or not os.listdir(DATASET_DIR):
-        print("Dataset kosong. File encoding tidak dibuat/dihapus.")
+        print("Dataset is empty. Encodings file will be removed if it exists.")
         if os.path.exists(ENCODINGS_FILE):
             os.remove(ENCODINGS_FILE)
         return
@@ -24,7 +24,7 @@ def regenerate_encodings():
         if not os.path.isdir(person_path):
             continue
 
-        print(f"  - Memproses wajah: {person_name}")
+        print(f"  - Processing faces for: {person_name}")
         for filename in os.listdir(person_path):
             image_path = os.path.join(person_path, filename)
             image = cv2.imread(image_path)
@@ -33,6 +33,7 @@ def regenerate_encodings():
 
             detections = face_utils.detect_faces(image)
             if detections:
+                # Assuming one face per image for dataset simplicity
                 encoding = face_utils.get_face_encoding(image, detections[0])
                 if encoding is not None:
                     known_encodings.append(encoding)
@@ -42,4 +43,4 @@ def regenerate_encodings():
     with open(ENCODINGS_FILE, "wb") as f:
         pickle.dump(data, f)
 
-    print(f"Proses encoding selesai. Data disimpan di '{ENCODINGS_FILE}'.")
+    print(f"Encoding process finished. Data saved to '{ENCODINGS_FILE}'.")
